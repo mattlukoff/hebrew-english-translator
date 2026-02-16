@@ -1,0 +1,63 @@
+You are a senior full-stack engineer.
+
+I want to build a production-ready web application that translates Hebrew text into clear, high-quality English using a top-tier LLM translation model.
+
+GOAL
+Build a web app that:
+1. Allows users to:
+   - Browse and select texts from the Sefaria API
+   - OR upload their own Hebrew text (TXT or DOCX)
+2. Select:
+   - Entire text
+   - OR specific chapter
+   - OR specific verse range
+3. Press “Translate”
+4. Translate Hebrew → English using a high-quality LLM API (OpenAI or comparable).
+5. Display results in a beautiful interlinear format:
+   - Hebrew line
+   - Directly beneath it: English translation
+   - Preserve original chapter + verse numbering
+6. Provide export options:
+   - CSV
+   - Google Sheets export (via Sheets API)
+   - Professionally formatted printable PDF
+
+TECH STACK REQUIREMENTS
+- Frontend: Next.js (React, App Router)
+- Styling: TailwindCSS with elegant typography (Hebrew RTL support required)
+- Backend: Node.js API routes
+- Use Sefaria public API for text retrieval
+- Use OpenAI API for translation (structured prompt for accurate biblical Hebrew translation)
+- Use pdf-lib or similar for PDF generation
+- Use Google Sheets API for sheet export
+- Ensure proper RTL rendering for Hebrew
+- Maintain clean component structure
+
+UI REQUIREMENTS
+- Minimal, elegant layout
+- Hebrew aligned RTL
+- English aligned LTR
+- Toggle between:
+    - Interlinear view
+    - Side-by-side view
+- Show chapter and verse numbers clearly
+- Add loading state during translation
+- Include error handling for API failures
+
+TRANSLATION REQUIREMENTS
+- Translation must:
+    - Be faithful but readable
+    - Preserve verse structure
+    - Not paraphrase excessively
+    - Maintain theological precision
+
+STRUCTURE
+Please:
+1. Generate full project folder structure
+2. Provide all required files with code
+3. Include environment variable setup instructions
+4. Include API integration examples
+5. Include sample Sefaria API call
+6. Include deployment instructions for Replit
+
+Make the architecture scalable so additional features can be added later.
