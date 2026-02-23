@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,12 +14,58 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { BookOpen, ChevronRight, Search, ArrowLeft, Loader2 } from "lucide-react";
+import { BookOpen, ChevronRight, Search, ArrowLeft, Loader2, FolderOpen } from "lucide-react";
 
-interface SefariaBook {
+interface CategoryNode {
+  category: string;
+  heCategory: string;
+  contents: (CategoryNode | BookNode)[];
+}
+
+interface BookNode {
   title: string;
   heTitle: string;
-  categories: string[];
+}
+
+function isCategory(node: CategoryNode | BookNode): node is CategoryNode {
+  return "category" in node;
+}
+
+function isBook(node: CategoryNode | BookNode): node is BookNode {
+  return "title" in node;
+}
+
+function countBooks(node: CategoryNode | BookNode): number {
+  if (isBook(node)) return 1;
+  return node.contents.reduce((sum, child) => sum + countBooks(child), 0);
+}
+
+function searchTree(nodes: (CategoryNode | BookNode)[], query: string): BookNode[] {
+  const results: BookNode[] = [];
+  const lower = query.toLowerCase();
+  for (const node of nodes) {
+    if (isBook(node)) {
+      if (node.title.toLowerCase().includes(lower) || node.heTitle.includes(query)) {
+        results.push(node);
+      }
+    } else {
+      results.push(...searchTree(node.contents, query));
+    }
+  }
+  return results;
+}
+
+function findParentCategory(nodes: (CategoryNode | BookNode)[], book: BookNode): string {
+  for (const node of nodes) {
+    if (isCategory(node)) {
+      for (const child of node.contents) {
+        if (isBook(child) && child.title === book.title) return node.category;
+      }
+      const found = findParentCategory(node.contents, book);
+      if (found) return `${node.category} › ${found}`;
+    }
+  }
+  return "";
 }
 
 interface Props {
@@ -27,51 +73,9 @@ interface Props {
   isTranslating: boolean;
 }
 
-const TORAH_BOOKS = [
-  { title: "Genesis", heTitle: "בראשית" },
-  { title: "Exodus", heTitle: "שמות" },
-  { title: "Leviticus", heTitle: "ויקרא" },
-  { title: "Numbers", heTitle: "במדבר" },
-  { title: "Deuteronomy", heTitle: "דברים" },
-];
-
-const PROPHETS = [
-  { title: "Joshua", heTitle: "יהושע" },
-  { title: "Judges", heTitle: "שופטים" },
-  { title: "I Samuel", heTitle: "שמואל א" },
-  { title: "II Samuel", heTitle: "שמואל ב" },
-  { title: "I Kings", heTitle: "מלכים א" },
-  { title: "II Kings", heTitle: "מלכים ב" },
-  { title: "Isaiah", heTitle: "ישעיהו" },
-  { title: "Jeremiah", heTitle: "ירמיהו" },
-  { title: "Ezekiel", heTitle: "יחזקאל" },
-];
-
-const WRITINGS = [
-  { title: "Psalms", heTitle: "תהלים" },
-  { title: "Proverbs", heTitle: "משלי" },
-  { title: "Job", heTitle: "איוב" },
-  { title: "Song of Songs", heTitle: "שיר השירים" },
-  { title: "Ruth", heTitle: "רות" },
-  { title: "Lamentations", heTitle: "איכה" },
-  { title: "Ecclesiastes", heTitle: "קהלת" },
-  { title: "Esther", heTitle: "אסתר" },
-  { title: "Daniel", heTitle: "דניאל" },
-  { title: "Ezra", heTitle: "עזרא" },
-  { title: "Nehemiah", heTitle: "נחמיה" },
-  { title: "I Chronicles", heTitle: "דברי הימים א" },
-  { title: "II Chronicles", heTitle: "דברי הימים ב" },
-];
-
-const CATEGORIES = [
-  { name: "Torah", books: TORAH_BOOKS },
-  { name: "Prophets", books: PROPHETS },
-  { name: "Writings", books: WRITINGS },
-];
-
 export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedBook, setSelectedBook] = useState<{ title: string; heTitle: string } | null>(null);
+  const [path, setPath] = useState<CategoryNode[]>([]);
+  const [selectedBook, setSelectedBook] = useState<BookNode | null>(null);
   const [selectionMode, setSelectionMode] = useState<"chapter" | "range">("chapter");
   const [selectedChapter, setSelectedChapter] = useState<string>("");
   const [fromChapter, setFromChapter] = useState<string>("");
@@ -80,6 +84,10 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
   const [toVerse, setToVerse] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
 
+  const { data: library, isLoading: loadingLibrary } = useQuery<(CategoryNode | BookNode)[]>({
+    queryKey: ["/api/sefaria/library"],
+  });
+
   const { data: bookInfo, isLoading: loadingBook } = useQuery({
     queryKey: ["/api/sefaria/index", selectedBook?.title],
     enabled: !!selectedBook,
@@ -87,11 +95,25 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
 
   const chapterCount = (bookInfo as any)?.schema?.lengths?.[0] ||
     (bookInfo as any)?.length ||
-    (selectedBook?.title === "Psalms" ? 150 : 50);
+    50;
+
+  const currentItems = useMemo(() => {
+    if (!library) return [];
+    if (path.length === 0) return library;
+    return path[path.length - 1].contents;
+  }, [library, path]);
+
+  const searchResults = useMemo(() => {
+    if (!searchQuery || !library) return [];
+    return searchTree(library, searchQuery).slice(0, 50);
+  }, [library, searchQuery]);
+
+  const breadcrumb = useMemo(() => {
+    return [{ label: "Library", node: null }, ...path.map(p => ({ label: p.category, node: p }))];
+  }, [path]);
 
   const handleTranslate = () => {
     if (!selectedBook) return;
-
     let ref = selectedBook.title;
     if (selectionMode === "chapter" && selectedChapter) {
       ref = `${selectedBook.title}.${selectedChapter}`;
@@ -102,7 +124,6 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
         ref = `${selectedBook.title}.${fromChapter}.${fromVerse}`;
       }
     }
-
     onSelectText(ref, selectedBook.title);
   };
 
@@ -114,21 +135,29 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
       setFromVerse("");
       setToChapter("");
       setToVerse("");
-    } else {
-      setSelectedCategory(null);
+    } else if (path.length > 0) {
+      setPath(prev => prev.slice(0, -1));
     }
   };
 
-  const filteredCategories = searchQuery
-    ? CATEGORIES.map((cat) => ({
-        ...cat,
-        books: cat.books.filter(
-          (b) =>
-            b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            b.heTitle.includes(searchQuery)
-        ),
-      })).filter((cat) => cat.books.length > 0)
-    : CATEGORIES;
+  const handleCategoryClick = (cat: CategoryNode) => {
+    setPath(prev => [...prev, cat]);
+    setSearchQuery("");
+  };
+
+  const handleBookClick = (book: BookNode) => {
+    setSelectedBook(book);
+    setSearchQuery("");
+  };
+
+  const handleBreadcrumbClick = (index: number) => {
+    if (index === 0) {
+      setPath([]);
+    } else {
+      setPath(prev => prev.slice(0, index));
+    }
+    setSearchQuery("");
+  };
 
   if (selectedBook) {
     return (
@@ -259,24 +288,28 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
 
   return (
     <Card className="p-4 sm:p-5">
-      <div className="flex items-center gap-2 mb-4">
-        {selectedCategory && (
-          <Button size="icon" variant="ghost" onClick={handleBack} data-testid="button-back-cat">
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-        )}
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold">
-            {selectedCategory || "Sefaria Library"}
-          </h3>
-          <p className="text-xs text-muted-foreground">Browse and select a text to translate</p>
+      <div className="mb-3">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2 flex-wrap" data-testid="breadcrumb-nav">
+          {breadcrumb.map((crumb, i) => (
+            <span key={i} className="flex items-center gap-1.5">
+              {i > 0 && <ChevronRight className="w-3 h-3 flex-shrink-0" />}
+              <button
+                className={`hover:text-foreground transition-colors ${i === breadcrumb.length - 1 ? "text-foreground font-medium" : ""}`}
+                onClick={() => handleBreadcrumbClick(i)}
+                data-testid={`breadcrumb-${i}`}
+              >
+                {crumb.label}
+              </button>
+            </span>
+          ))}
         </div>
+        <p className="text-xs text-muted-foreground">Browse and select a text to translate</p>
       </div>
 
       <div className="relative mb-3">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
         <Input
-          placeholder="Search books..."
+          placeholder="Search all texts..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-8 text-sm"
@@ -285,67 +318,74 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
       </div>
 
       <ScrollArea className="h-[340px]">
-        <div className="space-y-1">
-          {!selectedCategory ? (
-            filteredCategories.map((cat) => (
-              <div key={cat.name}>
-                {searchQuery ? (
-                  cat.books.map((book) => (
-                    <button
-                      key={book.title}
-                      className="flex items-center gap-3 w-full rounded-md px-3 py-2.5 text-left hover-elevate active-elevate-2 transition-colors"
-                      onClick={() => setSelectedBook(book)}
-                      data-testid={`button-book-${book.title}`}
-                    >
-                      <BookOpen className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium block truncate">{book.title}</span>
-                        <span className="text-xs text-muted-foreground font-hebrew" dir="rtl">{book.heTitle}</span>
-                      </div>
-                      <Badge variant="secondary" className="text-[10px]">{cat.name}</Badge>
-                    </button>
-                  ))
-                ) : (
-                  <button
-                    className="flex items-center gap-3 w-full rounded-md px-3 py-2.5 text-left hover-elevate active-elevate-2 transition-colors"
-                    onClick={() => setSelectedCategory(cat.name)}
-                    data-testid={`button-category-${cat.name}`}
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium">{cat.name}</span>
-                      <span className="text-xs text-muted-foreground block">{cat.books.length} books</span>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                  </button>
-                )}
-              </div>
-            ))
-          ) : (
-            CATEGORIES.find((c) => c.name === selectedCategory)?.books
-              .filter(
-                (b) =>
-                  !searchQuery ||
-                  b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  b.heTitle.includes(searchQuery)
-              )
-              .map((book) => (
+        {loadingLibrary ? (
+          <div className="space-y-2">
+            {Array.from({ length: 8 }, (_, i) => (
+              <Skeleton key={i} className="h-11 w-full" />
+            ))}
+          </div>
+        ) : searchQuery ? (
+          <div className="space-y-1">
+            {searchResults.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No texts found matching "{searchQuery}"</p>
+            ) : (
+              searchResults.map((book) => (
                 <button
                   key={book.title}
-                  className="flex items-center gap-3 w-full rounded-md px-3 py-2.5 text-left hover-elevate active-elevate-2 transition-colors"
-                  onClick={() => setSelectedBook(book)}
+                  className="flex items-center gap-3 w-full rounded-md px-3 py-2.5 text-left hover:bg-accent transition-colors"
+                  onClick={() => handleBookClick(book)}
                   data-testid={`button-book-${book.title}`}
                 >
                   <BookOpen className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm font-medium block">{book.title}</span>
+                    <span className="text-sm font-medium block truncate">{book.title}</span>
                     <span className="text-xs text-muted-foreground font-hebrew" dir="rtl">{book.heTitle}</span>
+                  </div>
+                  <Badge variant="secondary" className="text-[10px] max-w-[120px] truncate">
+                    {library ? findParentCategory(library, book).split(" › ").pop() : ""}
+                  </Badge>
+                </button>
+              ))
+            )}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {currentItems.map((item) =>
+              isCategory(item) ? (
+                <button
+                  key={item.category}
+                  className="flex items-center gap-3 w-full rounded-md px-3 py-2.5 text-left hover:bg-accent transition-colors"
+                  onClick={() => handleCategoryClick(item)}
+                  data-testid={`button-category-${item.category}`}
+                >
+                  <FolderOpen className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium block truncate">{item.category}</span>
+                    <span className="text-xs text-muted-foreground font-hebrew" dir="rtl">{item.heCategory}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px]">{countBooks(item)}</Badge>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                  </div>
+                </button>
+              ) : isBook(item) ? (
+                <button
+                  key={item.title}
+                  className="flex items-center gap-3 w-full rounded-md px-3 py-2.5 text-left hover:bg-accent transition-colors"
+                  onClick={() => handleBookClick(item)}
+                  data-testid={`button-book-${item.title}`}
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium block truncate">{item.title}</span>
+                    <span className="text-xs text-muted-foreground font-hebrew" dir="rtl">{item.heTitle}</span>
                   </div>
                   <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                 </button>
-              ))
-          )}
-        </div>
+              ) : null
+            )}
+          </div>
+        )}
       </ScrollArea>
     </Card>
   );

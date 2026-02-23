@@ -106,6 +106,46 @@ export async function registerRoutes(
     }
   });
 
+  let cachedLibraryIndex: any = null;
+  let cacheTimestamp = 0;
+  const CACHE_TTL = 1000 * 60 * 60;
+
+  app.get("/api/sefaria/library", async (_req, res) => {
+    try {
+      const now = Date.now();
+      if (cachedLibraryIndex && now - cacheTimestamp < CACHE_TTL) {
+        return res.json(cachedLibraryIndex);
+      }
+      const response = await fetch("https://www.sefaria.org/api/index/");
+      if (!response.ok) throw new Error("Sefaria API error");
+      const data = await response.json();
+
+      function simplifyNode(node: any): any {
+        if (node.category) {
+          return {
+            category: node.category,
+            heCategory: node.heCategory || node.category,
+            contents: (node.contents || []).map(simplifyNode).filter(Boolean),
+          };
+        }
+        if (node.title) {
+          return {
+            title: node.title,
+            heTitle: node.heTitle || node.title,
+          };
+        }
+        return null;
+      }
+
+      cachedLibraryIndex = data.map(simplifyNode).filter(Boolean);
+      cacheTimestamp = now;
+      res.json(cachedLibraryIndex);
+    } catch (error) {
+      console.error("Sefaria library error:", error);
+      res.status(500).json({ error: "Failed to fetch library index" });
+    }
+  });
+
   app.get("/api/sefaria/index/:title", async (req, res) => {
     try {
       const { title } = req.params;

@@ -13,7 +13,7 @@ A web application that translates Hebrew text into clear, high-quality English u
 ## Project Structure
 - `client/src/pages/home.tsx` - Main page with text selection and translation display
 - `client/src/components/` - All UI components
-  - `sefaria-browser.tsx` - Browse Tanakh books (Torah, Prophets, Writings)
+  - `sefaria-browser.tsx` - Browse entire Sefaria library with breadcrumb navigation
   - `file-upload.tsx` - Upload/paste custom Hebrew text
   - `translation-display.tsx` - Interlinear and side-by-side views
   - `translation-skeleton.tsx` - Loading state
@@ -26,6 +26,7 @@ A web application that translates Hebrew text into clear, high-quality English u
 
 ## Key API Endpoints
 - `GET /api/translations` - List saved translations
+- `GET /api/sefaria/library` - Full Sefaria library index (cached 1hr)
 - `GET /api/sefaria/index/:title` - Proxy Sefaria index metadata
 - `POST /api/translate/sefaria` - Translate Sefaria text (body: { ref, title })
 - `POST /api/translate/custom` - Translate custom Hebrew text (body: { text, title })
