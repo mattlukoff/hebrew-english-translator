@@ -166,11 +166,35 @@ export async function registerRoutes(
       if (!response.ok) throw new Error("Sefaria API error");
       const data = await response.json();
       const shape = Array.isArray(data) ? data[0] : data;
+      const rawChapters = shape?.chapters || [];
+
+      function flattenChapters(chapters: any[]): number[] {
+        const result: number[] = [];
+        for (const ch of chapters) {
+          if (typeof ch === "number") {
+            result.push(ch);
+          } else if (ch && typeof ch === "object") {
+            if (typeof ch.chapters === "number") {
+              result.push(ch.chapters);
+            } else if (Array.isArray(ch.chapters)) {
+              result.push(...flattenChapters(ch.chapters));
+            } else if (typeof ch.length === "number" && ch.length > 0) {
+              result.push(ch.length);
+            } else {
+              result.push(0);
+            }
+          }
+        }
+        return result;
+      }
+
+      const chapters = flattenChapters(rawChapters);
+
       res.json({
         title: shape?.title || title,
         heTitle: shape?.heTitle || title,
-        length: shape?.length || 0,
-        chapters: shape?.chapters || [],
+        length: chapters.length,
+        chapters,
       });
     } catch (error) {
       console.error("Sefaria shape error:", error);
