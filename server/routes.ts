@@ -159,6 +159,25 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/sefaria/shape/:title", async (req, res) => {
+    try {
+      const { title } = req.params;
+      const response = await fetch(`https://www.sefaria.org/api/shape/${encodeURIComponent(title)}`);
+      if (!response.ok) throw new Error("Sefaria API error");
+      const data = await response.json();
+      const shape = Array.isArray(data) ? data[0] : data;
+      res.json({
+        title: shape?.title || title,
+        heTitle: shape?.heTitle || title,
+        length: shape?.length || 0,
+        chapters: shape?.chapters || [],
+      });
+    } catch (error) {
+      console.error("Sefaria shape error:", error);
+      res.status(500).json({ error: "Failed to fetch text shape" });
+    }
+  });
+
   app.post("/api/translate/sefaria", async (req, res) => {
     try {
       const { ref, title } = req.body;
