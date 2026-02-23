@@ -169,6 +169,28 @@ export async function registerRoutes(
       const schema = indexData.schema;
 
       if (schema?.nodes) {
+        const shapeRes = await fetch(`https://www.sefaria.org/api/shape/${encodeURIComponent(title)}`);
+        if (!shapeRes.ok) throw new Error("Sefaria shape API error");
+        const shapeData = await shapeRes.json();
+        const shapeArr = Array.isArray(shapeData) ? shapeData : [shapeData];
+        const rawShapeSections = shapeArr[0]?.chapters || [];
+
+        const shapeSections: { title: string; heTitle: string; length: number; chapters: number[] | number }[] = [];
+        function collectShapeSections(items: any[]) {
+          for (const item of items) {
+            if (item && typeof item === "object" && item.title) {
+              const chaps = item.chapters;
+              shapeSections.push({
+                title: item.title,
+                heTitle: item.heTitle || "",
+                length: item.length || 0,
+                chapters: chaps,
+              });
+            }
+          }
+        }
+        collectShapeSections(rawShapeSections);
+
         interface SectionInfo {
           title: string;
           heTitle: string;
@@ -178,38 +200,27 @@ export async function registerRoutes(
         }
         const sections: SectionInfo[] = [];
 
-        function extractSections(node: any, parentPath: string, parentTitle?: string, parentHeTitle?: string) {
-          if (node.nodes) {
-            const currentPath = node.title === title ? title : `${parentPath}, ${node.title}`;
-            for (const child of node.nodes) {
-              extractSections(child, currentPath, node.title, node.heTitle);
-            }
-            return;
+        for (const ss of shapeSections) {
+          const refPrefix = ss.title;
+          let chaptersArr: number[];
+          if (typeof ss.chapters === "number") {
+            chaptersArr = [ss.chapters];
+          } else if (Array.isArray(ss.chapters)) {
+            chaptersArr = ss.chapters.map((c: any) => typeof c === "number" ? c : 0);
+          } else {
+            chaptersArr = ss.length > 0 ? Array.from({ length: ss.length }, () => 0) : [1];
           }
-          const isDefault = !node.title || node.key === "default";
-          const displayTitle = isDefault ? (parentTitle || title) : node.title;
-          const displayHeTitle = isDefault ? (parentHeTitle || "") : (node.heTitle || "");
-          const refPrefix = isDefault
-            ? parentPath
-            : (node.wholeRef || `${parentPath}, ${node.title}`);
-          const lengths = node.lengths || [];
-          const chapterCount = lengths[0] || (node.depth === 1 ? 1 : 0);
-          const chapters = Array.isArray(lengths) && lengths.length > 1
-            ? Array.from({ length: chapterCount }, () => lengths[1] || 0)
-            : [chapterCount];
 
-          if (chapterCount > 0 || node.depth === 1) {
-            sections.push({
-              title: displayTitle,
-              heTitle: displayHeTitle,
-              refPrefix,
-              chapters: node.depth === 1 ? [1] : chapters,
-              length: node.depth === 1 ? 1 : chapterCount,
-            });
-          }
+          const displayTitle = ss.title.replace(`${title}, `, "");
+
+          sections.push({
+            title: displayTitle,
+            heTitle: ss.heTitle.replace(/^[^,]+, /, ""),
+            refPrefix,
+            chapters: chaptersArr,
+            length: chaptersArr.length,
+          });
         }
-
-        extractSections(schema, title);
 
         res.json({
           title: schema.title || title,
