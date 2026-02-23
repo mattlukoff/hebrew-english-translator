@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, FileSpreadsheet, Printer, Columns2, AlignJustify } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Columns2, AlignJustify } from "lucide-react";
 import type { VerseData, ViewMode } from "@/lib/types";
 
 interface Props {
@@ -38,14 +38,14 @@ export function TranslationDisplay({ verses, title, sourceRef }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  const handleExportPDF = async () => {
+  const handleExportText = async () => {
     try {
       const response = await fetch("/api/export/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ verses, title, sourceRef }),
       });
-      if (!response.ok) throw new Error("PDF export failed");
+      if (!response.ok) throw new Error("Text export failed");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -56,6 +56,90 @@ export function TranslationDisplay({ verses, title, sourceRef }: Props) {
     } catch {
       handleExportCSV();
     }
+  };
+
+  const handleExportPDF = async () => {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginLeft = 20;
+    const marginRight = 20;
+    const maxWidth = pageWidth - marginLeft - marginRight;
+    let y = 25;
+
+    const checkPage = (needed: number) => {
+      if (y + needed > pageHeight - 20) {
+        doc.addPage();
+        y = 25;
+      }
+    };
+
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text(title, pageWidth / 2, y, { align: "center" });
+    y += 8;
+
+    if (sourceRef) {
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 100, 100);
+      doc.text(sourceRef, pageWidth / 2, y, { align: "center" });
+      y += 6;
+    }
+
+    doc.setDrawColor(180, 180, 180);
+    doc.line(marginLeft, y, pageWidth - marginRight, y);
+    y += 10;
+    doc.setTextColor(0, 0, 0);
+
+    const currentChapters = [...new Set(verses.map((v) => v.chapter))];
+
+    for (const ch of currentChapters) {
+      const chVerses = verses.filter((v) => v.chapter === ch);
+
+      checkPage(12);
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Chapter ${ch}`, marginLeft, y);
+      y += 8;
+
+      for (const v of chVerses) {
+        const verseLabel = `[${v.chapter}:${v.verse}]`;
+        const englishText = v.english;
+
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(80, 80, 80);
+        const labelWidth = doc.getTextWidth(verseLabel + " ");
+
+        checkPage(14);
+        doc.text(verseLabel, marginLeft, y);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(0, 0, 0);
+        const wrappedEnglish = doc.splitTextToSize(englishText, maxWidth - labelWidth);
+        if (wrappedEnglish.length === 1) {
+          doc.text(wrappedEnglish[0], marginLeft + labelWidth, y);
+          y += 6;
+        } else {
+          doc.text(wrappedEnglish[0], marginLeft + labelWidth, y);
+          y += 5;
+          for (let li = 1; li < wrappedEnglish.length; li++) {
+            checkPage(6);
+            doc.text(wrappedEnglish[li], marginLeft + 8, y);
+            y += 5;
+          }
+          y += 1;
+        }
+
+        y += 2;
+      }
+
+      y += 4;
+    }
+
+    doc.save(`${title.replace(/\s+/g, "_")}_translation.pdf`);
   };
 
   const currentChapters = [...new Set(verses.map((v) => v.chapter))];
@@ -90,9 +174,13 @@ export function TranslationDisplay({ verses, title, sourceRef }: Props) {
           <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
           CSV
         </Button>
-        <Button variant="outline" size="sm" onClick={handleExportPDF} data-testid="button-export-txt">
-          <Download className="w-3.5 h-3.5 mr-1.5" />
+        <Button variant="outline" size="sm" onClick={handleExportText} data-testid="button-export-txt">
+          <FileText className="w-3.5 h-3.5 mr-1.5" />
           Text
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleExportPDF} data-testid="button-export-pdf">
+          <Download className="w-3.5 h-3.5 mr-1.5" />
+          PDF
         </Button>
       </div>
 

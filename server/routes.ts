@@ -278,55 +278,66 @@ export async function registerRoutes(
     }
   });
 
+  async function fetchAndParseSefariaRef(ref: string): Promise<{ chapter: number; verse: number; hebrew: string }[]> {
+    const sefariaUrl = `https://www.sefaria.org/api/texts/${encodeURIComponent(ref)}?context=0`;
+    console.log("Fetching Sefaria text:", ref, "URL:", sefariaUrl);
+    const sefariaRes = await fetch(sefariaUrl);
+    if (!sefariaRes.ok) {
+      const errorBody = await sefariaRes.text();
+      console.error("Sefaria API error body:", errorBody);
+      throw new Error(`Sefaria API returned ${sefariaRes.status}: ${errorBody}`);
+    }
+    const sefariaData = await sefariaRes.json();
+
+    if (sefariaData.error) {
+      throw new Error(sefariaData.error);
+    }
+
+    const hebrewTexts = flattenHebrewText(sefariaData.he);
+    const sections = sefariaData.sections || [1];
+    const isChapter = hebrewTexts.length > 1;
+
+    return hebrewTexts
+      .filter((t) => t && stripHtml(t).trim())
+      .map((heText, idx) => ({
+        chapter: isChapter ? sections[0] || 1 : (sections[0] || 1),
+        verse: isChapter ? idx + 1 : (sections[1] || idx + 1),
+        hebrew: heText,
+      }));
+  }
+
   app.post("/api/translate/sefaria", async (req, res) => {
     try {
-      const { ref, title } = req.body;
-      if (!ref) {
+      const { ref, refs, title } = req.body;
+
+      const refsToFetch: string[] = refs && Array.isArray(refs) ? refs : ref ? [ref] : [];
+      if (refsToFetch.length === 0) {
         return res.status(400).json({ error: "Reference is required" });
       }
 
-      const sefariaUrl = `https://www.sefaria.org/api/texts/${encodeURIComponent(ref)}?context=0`;
-      console.log("Fetching Sefaria text:", ref, "URL:", sefariaUrl);
-      const sefariaRes = await fetch(sefariaUrl);
-      if (!sefariaRes.ok) {
-        const errorBody = await sefariaRes.text();
-        console.error("Sefaria API error body:", errorBody);
-        throw new Error(`Sefaria API returned ${sefariaRes.status}: ${errorBody}`);
-      }
-      const sefariaData = await sefariaRes.json();
-
-      if (sefariaData.error) {
-        throw new Error(sefariaData.error);
-      }
-
-      const hebrewTexts = flattenHebrewText(sefariaData.he);
-      const sections = sefariaData.sections || [1];
-      const isChapter = hebrewTexts.length > 1;
-
-      const versesToTranslate = hebrewTexts
-        .filter((t) => t && stripHtml(t).trim())
-        .map((heText, idx) => ({
-          chapter: isChapter ? sections[0] || 1 : (sections[0] || 1),
-          verse: isChapter ? idx + 1 : (sections[1] || idx + 1),
-          hebrew: heText,
-        }));
+      const allChapterResults = await Promise.all(
+        refsToFetch.map((r: string) => fetchAndParseSefariaRef(r))
+      );
+      const versesToTranslate = allChapterResults.flat();
 
       if (versesToTranslate.length === 0) {
         return res.status(400).json({ error: "No Hebrew text found for this reference" });
       }
 
-      const translatedVerses = await translateVerses(versesToTranslate, title || ref);
+      const displayRef = refsToFetch.length === 1 ? refsToFetch[0] : `${title || refsToFetch[0]} (${refsToFetch.length} chapters)`;
+
+      const translatedVerses = await translateVerses(versesToTranslate, title || displayRef);
 
       const saved = await storage.createTranslation({
-        title: title || ref,
-        sourceRef: ref,
+        title: title || displayRef,
+        sourceRef: displayRef,
         verses: translatedVerses,
       });
 
       res.json({
         verses: translatedVerses,
-        title: title || ref,
-        sourceRef: ref,
+        title: title || displayRef,
+        sourceRef: displayRef,
         id: saved.id,
       });
     } catch (error: any) {

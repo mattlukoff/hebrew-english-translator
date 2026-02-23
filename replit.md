@@ -28,9 +28,15 @@ A web application that translates Hebrew text into clear, high-quality English u
 - `GET /api/translations` - List saved translations
 - `GET /api/sefaria/library` - Full Sefaria library index (cached 1hr)
 - `GET /api/sefaria/index/:title` - Proxy Sefaria index metadata
-- `POST /api/translate/sefaria` - Translate Sefaria text (body: { ref, title })
+- `GET /api/sefaria/shape/:title` - Get chapter/verse structure for a text
+- `POST /api/translate/sefaria` - Translate Sefaria text (body: { ref, title } or { refs: string[], title } for multi-chapter)
 - `POST /api/translate/custom` - Translate custom Hebrew text (body: { text, title })
 - `POST /api/export/pdf` - Export translation as formatted text file
+
+## Features
+- Multi-chapter selection: Click chapters to toggle-select multiple, double-click to drill into verses
+- Export: CSV (client-side), Text file (server-side), PDF (client-side via jspdf)
+- Complex text support: Handles Sefaria texts with nested hierarchies (Tanya, Pri Etz Chaim, Zohar)
 
 ## Fonts
 - Hebrew text: Frank Ruhl Libre, David Libre (serif)

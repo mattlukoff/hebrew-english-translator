@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { BookOpen, ChevronRight, Search, ArrowLeft, Loader2, FolderOpen } from "lucide-react";
+import { BookOpen, ChevronRight, Search, ArrowLeft, Loader2, FolderOpen, CheckSquare, Square } from "lucide-react";
 
 interface CategoryNode {
   category: string;
@@ -87,14 +87,16 @@ function findParentCategory(nodes: (CategoryNode | BookNode)[], book: BookNode):
 
 interface Props {
   onSelectText: (ref: string, title: string) => void;
+  onSelectMultipleChapters?: (refs: string[], title: string) => void;
   isTranslating: boolean;
 }
 
-export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
+export function SefariaBrowser({ onSelectText, onSelectMultipleChapters, isTranslating }: Props) {
   const [path, setPath] = useState<CategoryNode[]>([]);
   const [selectedBook, setSelectedBook] = useState<BookNode | null>(null);
   const [selectedSection, setSelectedSection] = useState<SectionInfo | null>(null);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
+  const [selectedChapters, setSelectedChapters] = useState<Set<number>>(new Set());
   const [fromVerse, setFromVerse] = useState<number | null>(null);
   const [toVerse, setToVerse] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -143,25 +145,25 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
 
   const breadcrumb = useMemo(() => {
     const crumbs: { label: string; action: () => void }[] = [
-      { label: "Library", action: () => { setPath([]); setSelectedBook(null); setSelectedSection(null); setSelectedChapter(null); setFromVerse(null); setToVerse(null); setSearchQuery(""); } },
+      { label: "Library", action: () => { setPath([]); setSelectedBook(null); setSelectedSection(null); setSelectedChapter(null); setSelectedChapters(new Set()); setFromVerse(null); setToVerse(null); setSearchQuery(""); } },
     ];
     path.forEach((_, i) => {
       const idx = i;
       crumbs.push({
         label: path[idx].category,
-        action: () => { setPath(prev => prev.slice(0, idx + 1)); setSelectedBook(null); setSelectedSection(null); setSelectedChapter(null); setFromVerse(null); setToVerse(null); setSearchQuery(""); },
+        action: () => { setPath(prev => prev.slice(0, idx + 1)); setSelectedBook(null); setSelectedSection(null); setSelectedChapter(null); setSelectedChapters(new Set()); setFromVerse(null); setToVerse(null); setSearchQuery(""); },
       });
     });
     if (selectedBook) {
       crumbs.push({
         label: selectedBook.title,
-        action: () => { setSelectedSection(null); setSelectedChapter(null); setFromVerse(null); setToVerse(null); },
+        action: () => { setSelectedSection(null); setSelectedChapter(null); setSelectedChapters(new Set()); setFromVerse(null); setToVerse(null); },
       });
     }
     if (selectedSection) {
       crumbs.push({
         label: selectedSection.title,
-        action: () => { setSelectedChapter(null); setFromVerse(null); setToVerse(null); },
+        action: () => { setSelectedChapter(null); setSelectedChapters(new Set()); setFromVerse(null); setToVerse(null); },
       });
     }
     if (selectedChapter !== null) {
@@ -195,6 +197,18 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
     onSelectText(ref, selectedBook.title);
   };
 
+  const handleTranslateMultiChapters = () => {
+    if (!selectedBook || selectedChapters.size === 0) return;
+    const base = isComplex && selectedSection
+      ? selectedSection.refPrefix
+      : selectedBook.title;
+    const sortedChapters = [...selectedChapters].sort((a, b) => a - b);
+    const refs = sortedChapters.map(ch => `${base}.${ch}`);
+    if (onSelectMultipleChapters) {
+      onSelectMultipleChapters(refs, selectedBook.title);
+    }
+  };
+
   const selectionSummary = useMemo(() => {
     if (!selectedBook || selectedChapter === null) return "";
     const prefix = selectedSection ? `${selectedSection.title} ` : `${selectedBook.title} `;
@@ -207,6 +221,16 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
     return `${prefix}${selectedChapter} (full chapter)`;
   }, [selectedBook, selectedSection, selectedChapter, fromVerse, toVerse]);
 
+  const multiChapterSummary = useMemo(() => {
+    if (!selectedBook || selectedChapters.size === 0) return "";
+    const prefix = selectedSection ? `${selectedSection.title}` : `${selectedBook.title}`;
+    const sorted = [...selectedChapters].sort((a, b) => a - b);
+    if (sorted.length <= 5) {
+      return `${prefix} Ch. ${sorted.join(", ")}`;
+    }
+    return `${prefix} — ${sorted.length} chapters`;
+  }, [selectedBook, selectedSection, selectedChapters]);
+
   const handleBack = () => {
     if (fromVerse !== null || toVerse !== null) {
       setFromVerse(null);
@@ -215,9 +239,11 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
       setSelectedChapter(null);
     } else if (selectedSection) {
       setSelectedSection(null);
+      setSelectedChapters(new Set());
     } else if (selectedBook) {
       setSelectedBook(null);
       setSelectedSection(null);
+      setSelectedChapters(new Set());
     } else if (path.length > 0) {
       setPath(prev => prev.slice(0, -1));
     }
@@ -232,6 +258,7 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
     setSelectedBook(book);
     setSelectedSection(null);
     setSelectedChapter(null);
+    setSelectedChapters(new Set());
     setFromVerse(null);
     setToVerse(null);
     setSearchQuery("");
@@ -240,14 +267,37 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
   const handleSectionClick = (section: SectionInfo) => {
     setSelectedSection(section);
     setSelectedChapter(null);
+    setSelectedChapters(new Set());
     setFromVerse(null);
     setToVerse(null);
   };
 
-  const handleChapterClick = (ch: number) => {
+  const handleChapterToggle = (ch: number) => {
+    setSelectedChapters(prev => {
+      const next = new Set(prev);
+      if (next.has(ch)) {
+        next.delete(ch);
+      } else {
+        next.add(ch);
+      }
+      return next;
+    });
+  };
+
+  const handleChapterDrillDown = (ch: number) => {
     setSelectedChapter(ch);
+    setSelectedChapters(new Set());
     setFromVerse(null);
     setToVerse(null);
+  };
+
+  const handleSelectAll = () => {
+    const all = new Set(Array.from({ length: chapterCount }, (_, i) => i + 1));
+    setSelectedChapters(all);
+  };
+
+  const handleClearChapters = () => {
+    setSelectedChapters(new Set());
   };
 
   const handleVerseClick = (v: number) => {
@@ -329,21 +379,54 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
           </div>
         ) : showChapters ? (
           <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Select a chapter — {chapterCount} chapters available
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">
+                {chapterCount} chapters — click to select, double-click to pick verses
+              </p>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-6 px-2"
+                  onClick={handleSelectAll}
+                  data-testid="button-select-all-chapters"
+                >
+                  All
+                </Button>
+                {selectedChapters.size > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-6 px-2"
+                    onClick={handleClearChapters}
+                    data-testid="button-clear-chapters"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </div>
             <ScrollArea className="h-[300px]">
               <div className="grid grid-cols-5 sm:grid-cols-6 gap-1.5">
                 {Array.from({ length: chapterCount }, (_, i) => {
                   const ch = i + 1;
                   const verses = chaptersArray[i] || 0;
+                  const isSelected = selectedChapters.has(ch);
                   return (
                     <button
                       key={ch}
-                      className="flex flex-col items-center justify-center rounded-md border px-1 py-2 text-sm hover:bg-accent hover:border-primary/30 transition-colors"
-                      onClick={() => handleChapterClick(ch)}
+                      className={`relative flex flex-col items-center justify-center rounded-md border px-1 py-2 text-sm transition-colors ${
+                        isSelected
+                          ? "bg-primary/15 border-primary/40 text-foreground"
+                          : "hover:bg-accent hover:border-primary/30"
+                      }`}
+                      onClick={() => handleChapterToggle(ch)}
+                      onDoubleClick={() => handleChapterDrillDown(ch)}
                       data-testid={`button-chapter-${ch}`}
                     >
+                      {isSelected && (
+                        <CheckSquare className="absolute top-0.5 right-0.5 w-3 h-3 text-primary" />
+                      )}
                       <span className="font-medium">{ch}</span>
                       {verses > 0 && <span className="text-[10px] text-muted-foreground">{verses}v</span>}
                     </button>
@@ -351,6 +434,31 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
                 })}
               </div>
             </ScrollArea>
+
+            {selectedChapters.size > 0 && (
+              <>
+                <div className="rounded-md bg-muted/50 px-3 py-2 text-sm" data-testid="text-multi-chapter-summary">
+                  <span className="text-muted-foreground">Selection: </span>
+                  <span className="font-medium">{multiChapterSummary}</span>
+                </div>
+
+                <Button
+                  className="w-full"
+                  onClick={handleTranslateMultiChapters}
+                  disabled={isTranslating}
+                  data-testid="button-translate-chapters"
+                >
+                  {isTranslating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Translating...
+                    </>
+                  ) : (
+                    `Translate ${selectedChapters.size} chapter${selectedChapters.size > 1 ? "s" : ""}`
+                  )}
+                </Button>
+              </>
+            )}
           </div>
         ) : showVerses ? (
           <div className="space-y-3">

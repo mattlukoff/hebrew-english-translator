@@ -23,14 +23,19 @@ export default function Home() {
     mutationFn: async ({
       ref,
       title,
+      refs,
     }: {
       ref: string;
       title: string;
+      refs?: string[];
     }) => {
-      const res = await apiRequest("POST", "/api/translate/sefaria", {
-        ref,
-        title,
-      });
+      const body: Record<string, unknown> = { title };
+      if (refs && refs.length > 0) {
+        body.refs = refs;
+      } else {
+        body.ref = ref;
+      }
+      const res = await apiRequest("POST", "/api/translate/sefaria", body);
       return res.json();
     },
     onSuccess: (data: { verses: VerseData[]; title: string; sourceRef: string }) => {
@@ -84,6 +89,13 @@ export default function Home() {
     [translateMutation]
   );
 
+  const handleMultipleChapters = useCallback(
+    (refs: string[], title: string) => {
+      translateMutation.mutate({ ref: "", title, refs } as any);
+    },
+    [translateMutation]
+  );
+
   const handleCustomText = useCallback(
     (text: string, fileName: string) => {
       translateCustomMutation.mutate({ text, fileName });
@@ -120,6 +132,7 @@ export default function Home() {
               <TabsContent value="library" className="mt-3">
                 <SefariaBrowser
                   onSelectText={handleSefariaSelect}
+                  onSelectMultipleChapters={handleMultipleChapters}
                   isTranslating={isTranslating}
                 />
               </TabsContent>
