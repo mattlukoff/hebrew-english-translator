@@ -10,8 +10,7 @@ export function Header() {
             <BookOpen className="w-4 h-4" />
           </div>
           <div className="flex flex-col">
-            <span className="text-base font-semibold leading-tight tracking-tight">Ivri</span>
-            <span className="text-[10px] text-muted-foreground leading-tight">Hebrew Translator</span>
+            <span className="text-base font-semibold leading-tight tracking-tight">Hebrew to English Translator</span>
           </div>
         </a>
         <ThemeToggle />

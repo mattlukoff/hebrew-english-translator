@@ -33,16 +33,14 @@ async function translateVerses(
   verses: { chapter: number; verse: number; hebrew: string }[],
   bookContext?: string
 ): Promise<TranslationVerse[]> {
-  const batchSize = 15;
-  const results: TranslationVerse[] = [];
+  const batchSize = 25;
 
+  const batches: { chapter: number; verse: number; hebrew: string }[][] = [];
   for (let i = 0; i < verses.length; i += batchSize) {
-    const batch = verses.slice(i, i + batchSize);
-    const versesText = batch
-      .map((v) => `[${v.chapter}:${v.verse}] ${stripHtml(v.hebrew)}`)
-      .join("\n");
+    batches.push(verses.slice(i, i + batchSize));
+  }
 
-    const systemPrompt = `You are an expert biblical Hebrew translator. Translate the following Hebrew text into clear, readable English. 
+  const systemPrompt = `You are an expert biblical Hebrew translator. Translate the following Hebrew text into clear, readable English. 
 Rules:
 - Be faithful to the original meaning but produce natural English
 - Preserve verse structure exactly as given
@@ -51,45 +49,54 @@ Rules:
 - For each verse, output ONLY the English translation on a new line, prefixed with the same verse reference [chapter:verse]
 - Do not add any commentary or notes${bookContext ? `\nContext: This text is from ${bookContext}` : ""}`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-5-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: versesText },
-      ],
-      max_completion_tokens: 8192,
-    });
+  const batchResults = await Promise.all(
+    batches.map(async (batch) => {
+      const versesText = batch
+        .map((v) => `[${v.chapter}:${v.verse}] ${stripHtml(v.hebrew)}`)
+        .join("\n");
 
-    const content = response.choices[0]?.message?.content || "";
-    const lines = content.split("\n").filter((l) => l.trim());
-
-    for (let j = 0; j < batch.length; j++) {
-      const v = batch[j];
-      let english = "";
-
-      const pattern = new RegExp(`\\[${v.chapter}:${v.verse}\\]\\s*(.+)`);
-      for (const line of lines) {
-        const match = line.match(pattern);
-        if (match) {
-          english = match[1].trim();
-          break;
-        }
-      }
-
-      if (!english && lines[j]) {
-        english = lines[j].replace(/^\[\d+:\d+\]\s*/, "").trim();
-      }
-
-      results.push({
-        chapter: v.chapter,
-        verse: v.verse,
-        hebrew: v.hebrew,
-        english: english || "(Translation unavailable)",
+      const response = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: versesText },
+        ],
+        max_completion_tokens: 8192,
       });
-    }
-  }
 
-  return results;
+      const content = response.choices[0]?.message?.content || "";
+      const lines = content.split("\n").filter((l) => l.trim());
+
+      const parsed: TranslationVerse[] = [];
+      for (let j = 0; j < batch.length; j++) {
+        const v = batch[j];
+        let english = "";
+
+        const pattern = new RegExp(`\\[${v.chapter}:${v.verse}\\]\\s*(.+)`);
+        for (const line of lines) {
+          const match = line.match(pattern);
+          if (match) {
+            english = match[1].trim();
+            break;
+          }
+        }
+
+        if (!english && lines[j]) {
+          english = lines[j].replace(/^\[\d+:\d+\]\s*/, "").trim();
+        }
+
+        parsed.push({
+          chapter: v.chapter,
+          verse: v.verse,
+          hebrew: v.hebrew,
+          english: english || "(Translation unavailable)",
+        });
+      }
+      return parsed;
+    })
+  );
+
+  return batchResults.flat();
 }
 
 export async function registerRoutes(

@@ -1,7 +1,7 @@
-# Ivri - Hebrew Text Translator
+# Hebrew to English Translator
 
 ## Overview
-A web application that translates Hebrew text into clear, high-quality English using AI (OpenAI via Replit AI Integrations). Users can browse the Sefaria library or upload custom Hebrew text, then view translations in interlinear or side-by-side format with export options.
+A web application that translates Hebrew text into clear, high-quality English using AI (OpenAI via Replit AI Integrations). Users can browse the Sefaria library or upload custom Hebrew text, then view translations in interlinear or side-by-side format with export options. Translation uses parallel batch processing for speed.
 
 ## Tech Stack
 - **Frontend**: React + Vite + TailwindCSS + shadcn/ui + wouter routing
