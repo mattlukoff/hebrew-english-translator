@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { BookOpen, ChevronRight, Search, ArrowLeft, Loader2, FolderOpen, Hash } from "lucide-react";
+import { BookOpen, ChevronRight, Search, ArrowLeft, Loader2, FolderOpen } from "lucide-react";
 
 interface CategoryNode {
   category: string;
@@ -19,12 +19,30 @@ interface BookNode {
   heTitle: string;
 }
 
-interface ShapeData {
+interface SectionInfo {
   title: string;
   heTitle: string;
+  refPrefix: string;
+  chapters: number[];
+  length: number;
+}
+
+interface SimpleShapeData {
+  title: string;
+  heTitle: string;
+  isComplex: false;
   length: number;
   chapters: number[];
 }
+
+interface ComplexShapeData {
+  title: string;
+  heTitle: string;
+  isComplex: true;
+  sections: SectionInfo[];
+}
+
+type ShapeData = SimpleShapeData | ComplexShapeData;
 
 function isCategory(node: CategoryNode | BookNode): node is CategoryNode {
   return "category" in node;
@@ -75,6 +93,7 @@ interface Props {
 export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
   const [path, setPath] = useState<CategoryNode[]>([]);
   const [selectedBook, setSelectedBook] = useState<BookNode | null>(null);
+  const [selectedSection, setSelectedSection] = useState<SectionInfo | null>(null);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
   const [fromVerse, setFromVerse] = useState<number | null>(null);
   const [toVerse, setToVerse] = useState<number | null>(null);
@@ -89,9 +108,26 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
     enabled: !!selectedBook,
   });
 
-  const chapterCount = shapeData?.length || 0;
-  const verseCount = selectedChapter !== null && shapeData?.chapters
-    ? shapeData.chapters[selectedChapter - 1] || 0
+  const isComplex = shapeData?.isComplex === true;
+
+  const chapterCount = useMemo(() => {
+    if (!shapeData) return 0;
+    if (shapeData.isComplex) {
+      return selectedSection?.length || 0;
+    }
+    return shapeData.length || 0;
+  }, [shapeData, selectedSection]);
+
+  const chaptersArray = useMemo(() => {
+    if (!shapeData) return [];
+    if (shapeData.isComplex) {
+      return selectedSection?.chapters || [];
+    }
+    return shapeData.chapters || [];
+  }, [shapeData, selectedSection]);
+
+  const verseCount = selectedChapter !== null && chaptersArray.length > 0
+    ? chaptersArray[selectedChapter - 1] || 0
     : 0;
 
   const currentItems = useMemo(() => {
@@ -107,18 +143,24 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
 
   const breadcrumb = useMemo(() => {
     const crumbs: { label: string; action: () => void }[] = [
-      { label: "Library", action: () => { setPath([]); setSelectedBook(null); setSelectedChapter(null); setFromVerse(null); setToVerse(null); setSearchQuery(""); } },
+      { label: "Library", action: () => { setPath([]); setSelectedBook(null); setSelectedSection(null); setSelectedChapter(null); setFromVerse(null); setToVerse(null); setSearchQuery(""); } },
     ];
     path.forEach((_, i) => {
       const idx = i;
       crumbs.push({
         label: path[idx].category,
-        action: () => { setPath(prev => prev.slice(0, idx + 1)); setSelectedBook(null); setSelectedChapter(null); setFromVerse(null); setToVerse(null); setSearchQuery(""); },
+        action: () => { setPath(prev => prev.slice(0, idx + 1)); setSelectedBook(null); setSelectedSection(null); setSelectedChapter(null); setFromVerse(null); setToVerse(null); setSearchQuery(""); },
       });
     });
     if (selectedBook) {
       crumbs.push({
         label: selectedBook.title,
+        action: () => { setSelectedSection(null); setSelectedChapter(null); setFromVerse(null); setToVerse(null); },
+      });
+    }
+    if (selectedSection) {
+      crumbs.push({
+        label: selectedSection.title,
         action: () => { setSelectedChapter(null); setFromVerse(null); setToVerse(null); },
       });
     }
@@ -129,20 +171,41 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
       });
     }
     return crumbs;
-  }, [path, selectedBook, selectedChapter]);
+  }, [path, selectedBook, selectedSection, selectedChapter]);
+
+  const buildRef = (ch: number | null, startV: number | null, endV: number | null): string => {
+    if (!selectedBook) return "";
+    const base = isComplex && selectedSection
+      ? selectedSection.refPrefix
+      : selectedBook.title;
+
+    if (ch === null) return base;
+    if (startV !== null && endV !== null && startV !== endV) {
+      return `${base}.${ch}.${startV}-${ch}.${endV}`;
+    }
+    if (startV !== null) {
+      return `${base}.${ch}.${startV}`;
+    }
+    return `${base}.${ch}`;
+  };
 
   const handleTranslate = () => {
     if (!selectedBook || selectedChapter === null) return;
-    let ref: string;
-    if (fromVerse !== null && toVerse !== null && fromVerse !== toVerse) {
-      ref = `${selectedBook.title}.${selectedChapter}.${fromVerse}-${selectedChapter}.${toVerse}`;
-    } else if (fromVerse !== null) {
-      ref = `${selectedBook.title}.${selectedChapter}.${fromVerse}`;
-    } else {
-      ref = `${selectedBook.title}.${selectedChapter}`;
-    }
+    const ref = buildRef(selectedChapter, fromVerse, toVerse);
     onSelectText(ref, selectedBook.title);
   };
+
+  const selectionSummary = useMemo(() => {
+    if (!selectedBook || selectedChapter === null) return "";
+    const prefix = selectedSection ? `${selectedSection.title} ` : `${selectedBook.title} `;
+    if (fromVerse !== null && toVerse !== null && fromVerse !== toVerse) {
+      return `${prefix}${selectedChapter}:${fromVerse}-${toVerse}`;
+    }
+    if (fromVerse !== null) {
+      return `${prefix}${selectedChapter}:${fromVerse}`;
+    }
+    return `${prefix}${selectedChapter} (full chapter)`;
+  }, [selectedBook, selectedSection, selectedChapter, fromVerse, toVerse]);
 
   const handleBack = () => {
     if (fromVerse !== null || toVerse !== null) {
@@ -150,8 +213,11 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
       setToVerse(null);
     } else if (selectedChapter !== null) {
       setSelectedChapter(null);
+    } else if (selectedSection) {
+      setSelectedSection(null);
     } else if (selectedBook) {
       setSelectedBook(null);
+      setSelectedSection(null);
     } else if (path.length > 0) {
       setPath(prev => prev.slice(0, -1));
     }
@@ -164,10 +230,18 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
 
   const handleBookClick = (book: BookNode) => {
     setSelectedBook(book);
+    setSelectedSection(null);
     setSelectedChapter(null);
     setFromVerse(null);
     setToVerse(null);
     setSearchQuery("");
+  };
+
+  const handleSectionClick = (section: SectionInfo) => {
+    setSelectedSection(section);
+    setSelectedChapter(null);
+    setFromVerse(null);
+    setToVerse(null);
   };
 
   const handleChapterClick = (ch: number) => {
@@ -191,19 +265,11 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
     }
   };
 
-  const selectionSummary = useMemo(() => {
-    if (!selectedBook || selectedChapter === null) return "";
-    const base = `${selectedBook.title} ${selectedChapter}`;
-    if (fromVerse !== null && toVerse !== null && fromVerse !== toVerse) {
-      return `${base}:${fromVerse}-${toVerse}`;
-    }
-    if (fromVerse !== null) {
-      return `${base}:${fromVerse}`;
-    }
-    return `${base} (full chapter)`;
-  }, [selectedBook, selectedChapter, fromVerse, toVerse]);
-
   if (selectedBook) {
+    const showSections = isComplex && !selectedSection;
+    const showChapters = (!isComplex || selectedSection) && selectedChapter === null;
+    const showVerses = selectedChapter !== null;
+
     return (
       <Card className="p-4 sm:p-5">
         <div className="flex items-center gap-2 mb-3">
@@ -233,7 +299,35 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-20 w-full" />
           </div>
-        ) : selectedChapter === null ? (
+        ) : showSections && shapeData?.isComplex ? (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Select a section — {shapeData.sections.length} sections available
+            </p>
+            <ScrollArea className="h-[300px]">
+              <div className="space-y-1">
+                {shapeData.sections.map((section) => (
+                  <button
+                    key={section.refPrefix}
+                    className="flex items-center gap-3 w-full rounded-md px-3 py-2.5 text-left hover:bg-accent transition-colors"
+                    onClick={() => handleSectionClick(section)}
+                    data-testid={`button-section-${section.title}`}
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium block truncate">{section.title}</span>
+                      <span className="text-xs text-muted-foreground font-hebrew" dir="rtl">{section.heTitle}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-[10px]">{section.length} ch</Badge>
+                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        ) : showChapters ? (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
               Select a chapter — {chapterCount} chapters available
@@ -242,7 +336,7 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
               <div className="grid grid-cols-5 sm:grid-cols-6 gap-1.5">
                 {Array.from({ length: chapterCount }, (_, i) => {
                   const ch = i + 1;
-                  const verses = shapeData?.chapters?.[i] || 0;
+                  const verses = chaptersArray[i] || 0;
                   return (
                     <button
                       key={ch}
@@ -251,14 +345,14 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
                       data-testid={`button-chapter-${ch}`}
                     >
                       <span className="font-medium">{ch}</span>
-                      <span className="text-[10px] text-muted-foreground">{verses}v</span>
+                      {verses > 0 && <span className="text-[10px] text-muted-foreground">{verses}v</span>}
                     </button>
                   );
                 })}
               </div>
             </ScrollArea>
           </div>
-        ) : (
+        ) : showVerses ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
@@ -325,7 +419,7 @@ export function SefariaBrowser({ onSelectText, isTranslating }: Props) {
               )}
             </Button>
           </div>
-        )}
+        ) : null}
       </Card>
     );
   }

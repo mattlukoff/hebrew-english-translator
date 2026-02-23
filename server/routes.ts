@@ -162,40 +162,98 @@ export async function registerRoutes(
   app.get("/api/sefaria/shape/:title", async (req, res) => {
     try {
       const { title } = req.params;
-      const response = await fetch(`https://www.sefaria.org/api/shape/${encodeURIComponent(title)}`);
-      if (!response.ok) throw new Error("Sefaria API error");
-      const data = await response.json();
-      const shape = Array.isArray(data) ? data[0] : data;
-      const rawChapters = shape?.chapters || [];
 
-      function flattenChapters(chapters: any[]): number[] {
-        const result: number[] = [];
-        for (const ch of chapters) {
-          if (typeof ch === "number") {
-            result.push(ch);
-          } else if (ch && typeof ch === "object") {
-            if (typeof ch.chapters === "number") {
-              result.push(ch.chapters);
-            } else if (Array.isArray(ch.chapters)) {
-              result.push(...flattenChapters(ch.chapters));
-            } else if (typeof ch.length === "number" && ch.length > 0) {
-              result.push(ch.length);
-            } else {
-              result.push(0);
+      const indexRes = await fetch(`https://www.sefaria.org/api/index/${encodeURIComponent(title)}`);
+      if (!indexRes.ok) throw new Error("Sefaria API error");
+      const indexData = await indexRes.json();
+      const schema = indexData.schema;
+
+      if (schema?.nodes) {
+        interface SectionInfo {
+          title: string;
+          heTitle: string;
+          refPrefix: string;
+          chapters: number[];
+          length: number;
+        }
+        const sections: SectionInfo[] = [];
+
+        function extractSections(node: any, parentPath: string, parentTitle?: string, parentHeTitle?: string) {
+          if (node.nodes) {
+            const currentPath = node.title === title ? title : `${parentPath}, ${node.title}`;
+            for (const child of node.nodes) {
+              extractSections(child, currentPath, node.title, node.heTitle);
             }
+            return;
+          }
+          const isDefault = !node.title || node.key === "default";
+          const displayTitle = isDefault ? (parentTitle || title) : node.title;
+          const displayHeTitle = isDefault ? (parentHeTitle || "") : (node.heTitle || "");
+          const refPrefix = isDefault
+            ? parentPath
+            : (node.wholeRef || `${parentPath}, ${node.title}`);
+          const lengths = node.lengths || [];
+          const chapterCount = lengths[0] || (node.depth === 1 ? 1 : 0);
+          const chapters = Array.isArray(lengths) && lengths.length > 1
+            ? Array.from({ length: chapterCount }, () => lengths[1] || 0)
+            : [chapterCount];
+
+          if (chapterCount > 0 || node.depth === 1) {
+            sections.push({
+              title: displayTitle,
+              heTitle: displayHeTitle,
+              refPrefix,
+              chapters: node.depth === 1 ? [1] : chapters,
+              length: node.depth === 1 ? 1 : chapterCount,
+            });
           }
         }
-        return result;
+
+        extractSections(schema, title);
+
+        res.json({
+          title: schema.title || title,
+          heTitle: schema.heTitle || title,
+          isComplex: true,
+          sections,
+        });
+      } else {
+        const shapeRes = await fetch(`https://www.sefaria.org/api/shape/${encodeURIComponent(title)}`);
+        if (!shapeRes.ok) throw new Error("Sefaria shape API error");
+        const shapeData = await shapeRes.json();
+        const shape = Array.isArray(shapeData) ? shapeData[0] : shapeData;
+        const rawChapters = shape?.chapters || [];
+
+        function flattenChapters(chapters: any[]): number[] {
+          const result: number[] = [];
+          for (const ch of chapters) {
+            if (typeof ch === "number") {
+              result.push(ch);
+            } else if (ch && typeof ch === "object") {
+              if (typeof ch.chapters === "number") {
+                result.push(ch.chapters);
+              } else if (Array.isArray(ch.chapters)) {
+                result.push(...flattenChapters(ch.chapters));
+              } else if (typeof ch.length === "number" && ch.length > 0) {
+                result.push(ch.length);
+              } else {
+                result.push(0);
+              }
+            }
+          }
+          return result;
+        }
+
+        const chapters = flattenChapters(rawChapters);
+
+        res.json({
+          title: shape?.title || title,
+          heTitle: shape?.heTitle || title,
+          isComplex: false,
+          length: chapters.length,
+          chapters,
+        });
       }
-
-      const chapters = flattenChapters(rawChapters);
-
-      res.json({
-        title: shape?.title || title,
-        heTitle: shape?.heTitle || title,
-        length: chapters.length,
-        chapters,
-      });
     } catch (error) {
       console.error("Sefaria shape error:", error);
       res.status(500).json({ error: "Failed to fetch text shape" });
@@ -210,9 +268,12 @@ export async function registerRoutes(
       }
 
       const sefariaUrl = `https://www.sefaria.org/api/texts/${encodeURIComponent(ref)}?context=0`;
+      console.log("Fetching Sefaria text:", ref, "URL:", sefariaUrl);
       const sefariaRes = await fetch(sefariaUrl);
       if (!sefariaRes.ok) {
-        throw new Error(`Sefaria API returned ${sefariaRes.status}`);
+        const errorBody = await sefariaRes.text();
+        console.error("Sefaria API error body:", errorBody);
+        throw new Error(`Sefaria API returned ${sefariaRes.status}: ${errorBody}`);
       }
       const sefariaData = await sefariaRes.json();
 
