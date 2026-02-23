@@ -60,86 +60,67 @@ export function TranslationDisplay({ verses, title, sourceRef }: Props) {
 
   const handleExportPDF = async () => {
     const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const marginLeft = 20;
-    const marginRight = 20;
-    const maxWidth = pageWidth - marginLeft - marginRight;
-    let y = 25;
+    const html2canvas = (await import("html2canvas")).default;
 
-    const checkPage = (needed: number) => {
-      if (y + needed > pageHeight - 20) {
-        doc.addPage();
-        y = 25;
-      }
-    };
+    const container = document.createElement("div");
+    container.style.cssText = "position:absolute;left:-9999px;top:0;width:700px;background:#fff;padding:40px 50px;font-family:'Crimson Pro','Source Serif 4','Georgia',serif;color:#000;line-height:1.6;";
 
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.text(title, pageWidth / 2, y, { align: "center" });
-    y += 8;
+    let html = `<div style="text-align:center;margin-bottom:8px;">
+      <h1 style="font-size:22px;font-weight:700;margin:0 0 4px 0;">${title}</h1>
+      ${sourceRef ? `<p style="font-size:13px;color:#666;margin:0;">${sourceRef}</p>` : ""}
+    </div>
+    <hr style="border:none;border-top:1px solid #ccc;margin:12px 0 20px 0;">`;
 
-    if (sourceRef) {
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100, 100, 100);
-      doc.text(sourceRef, pageWidth / 2, y, { align: "center" });
-      y += 6;
-    }
+    const chapterGroups = [...new Set(verses.map((v) => v.chapter))];
 
-    doc.setDrawColor(180, 180, 180);
-    doc.line(marginLeft, y, pageWidth - marginRight, y);
-    y += 10;
-    doc.setTextColor(0, 0, 0);
-
-    const currentChapters = [...new Set(verses.map((v) => v.chapter))];
-
-    for (const ch of currentChapters) {
+    for (const ch of chapterGroups) {
       const chVerses = verses.filter((v) => v.chapter === ch);
-
-      checkPage(12);
-      doc.setFontSize(13);
-      doc.setFont("helvetica", "bold");
-      doc.text(`Chapter ${ch}`, marginLeft, y);
-      y += 8;
+      html += `<h2 style="font-size:16px;font-weight:700;margin:24px 0 12px 0;padding-bottom:4px;border-bottom:1px solid #eee;">Chapter ${ch}</h2>`;
 
       for (const v of chVerses) {
-        const verseLabel = `[${v.chapter}:${v.verse}]`;
-        const englishText = v.english;
-
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(80, 80, 80);
-        const labelWidth = doc.getTextWidth(verseLabel + " ");
-
-        checkPage(14);
-        doc.text(verseLabel, marginLeft, y);
-
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(0, 0, 0);
-        const wrappedEnglish = doc.splitTextToSize(englishText, maxWidth - labelWidth);
-        if (wrappedEnglish.length === 1) {
-          doc.text(wrappedEnglish[0], marginLeft + labelWidth, y);
-          y += 6;
-        } else {
-          doc.text(wrappedEnglish[0], marginLeft + labelWidth, y);
-          y += 5;
-          for (let li = 1; li < wrappedEnglish.length; li++) {
-            checkPage(6);
-            doc.text(wrappedEnglish[li], marginLeft + 8, y);
-            y += 5;
-          }
-          y += 1;
-        }
-
-        y += 2;
+        const cleanHebrew = stripHtmlTags(v.hebrew);
+        html += `<div style="margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:600;color:#888;margin-bottom:4px;">${v.chapter}:${v.verse}</div>
+          <div dir="rtl" style="font-family:'Frank Ruhl Libre','David Libre','SBL Hebrew',serif;font-size:16px;line-height:1.8;margin-bottom:6px;text-align:right;">${cleanHebrew}</div>
+          <div style="font-family:'Crimson Pro','Source Serif 4','Georgia',serif;font-size:14px;line-height:1.7;color:#222;">${v.english}</div>
+        </div>`;
       }
-
-      y += 4;
     }
 
-    doc.save(`${title.replace(/\s+/g, "_")}_translation.pdf`);
+    container.innerHTML = html;
+    document.body.appendChild(container);
+
+    try {
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      });
+
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const imgWidth = 190;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pageHeight = 277;
+
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      let position = 10;
+      let remainingHeight = imgHeight;
+
+      doc.addImage(imgData, "JPEG", 10, position, imgWidth, imgHeight);
+      remainingHeight -= pageHeight;
+
+      while (remainingHeight > 0) {
+        doc.addPage();
+        position = position - pageHeight;
+        doc.addImage(imgData, "JPEG", 10, position, imgWidth, imgHeight);
+        remainingHeight -= pageHeight;
+      }
+
+      doc.save(`${title.replace(/\s+/g, "_")}_translation.pdf`);
+    } finally {
+      document.body.removeChild(container);
+    }
   };
 
   const currentChapters = [...new Set(verses.map((v) => v.chapter))];
