@@ -36,7 +36,7 @@ A web application that translates Hebrew text into clear, high-quality English u
 ## Features
 - Multi-chapter selection: Click chapters to toggle-select multiple, double-click to drill into verses
 - Export: CSV (client-side), Text file (server-side), PDF (client-side via jspdf)
-- Complex text support: Handles Sefaria texts with nested hierarchies (Tanya, Pri Etz Chaim, Zohar)
+- Complex text support: Handles Sefaria texts with nested hierarchies (Tanya, Pri Etz Chaim, Sefer Etz Chaim, Zohar) including flat-shape fallback using index schema nodes for texts where the Shape API returns numeric arrays instead of titled sections
 
 ## Fonts
 - Hebrew text: Frank Ruhl Libre, David Libre (serif)

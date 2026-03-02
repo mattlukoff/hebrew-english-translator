@@ -207,26 +207,89 @@ export async function registerRoutes(
         }
         const sections: SectionInfo[] = [];
 
-        for (const ss of shapeSections) {
-          const refPrefix = ss.title;
-          let chaptersArr: number[];
-          if (typeof ss.chapters === "number") {
-            chaptersArr = [ss.chapters];
-          } else if (Array.isArray(ss.chapters)) {
-            chaptersArr = ss.chapters.map((c: any) => typeof c === "number" ? c : 0);
-          } else {
-            chaptersArr = ss.length > 0 ? Array.from({ length: ss.length }, () => 0) : [1];
+        if (shapeSections.length > 0) {
+          for (const ss of shapeSections) {
+            const refPrefix = ss.title;
+            let chaptersArr: number[];
+            if (typeof ss.chapters === "number") {
+              chaptersArr = [ss.chapters];
+            } else if (Array.isArray(ss.chapters)) {
+              chaptersArr = ss.chapters.map((c: any) => typeof c === "number" ? c : 0);
+            } else {
+              chaptersArr = ss.length > 0 ? Array.from({ length: ss.length }, () => 0) : [1];
+            }
+
+            const displayTitle = ss.title.replace(`${title}, `, "");
+
+            sections.push({
+              title: displayTitle,
+              heTitle: ss.heTitle.replace(/^[^,]+, /, ""),
+              refPrefix,
+              chapters: chaptersArr,
+              length: chaptersArr.length,
+            });
           }
+        } else if (schema.nodes && Array.isArray(schema.nodes)) {
+          const schemaNodes = schema.nodes;
+          const mainShapeChapters = rawShapeSections;
 
-          const displayTitle = ss.title.replace(`${title}, `, "");
+          for (const node of schemaNodes) {
+            const nodeName = node.titles?.find((t: any) => t.lang === "en" && t.primary)?.text || node.key;
+            const nodeHeName = node.titles?.find((t: any) => t.lang === "he" && t.primary)?.text || nodeName;
+            const isDefault = node.default === true;
+            const depth = node.depth || 2;
 
-          sections.push({
-            title: displayTitle,
-            heTitle: ss.heTitle.replace(/^[^,]+, /, ""),
-            refPrefix,
-            chapters: chaptersArr,
-            length: chaptersArr.length,
-          });
+            if (!isDefault) {
+              const nodeShapeRes = await fetch(`https://www.sefaria.org/api/shape/${encodeURIComponent(title + ", " + nodeName)}`);
+              if (nodeShapeRes.ok) {
+                const nodeShapeData = await nodeShapeRes.json();
+                const nodeShape = Array.isArray(nodeShapeData) ? nodeShapeData[0] : nodeShapeData;
+                const nodeChapters = nodeShape?.chapters || [];
+                const chaptersArr = nodeChapters.map((c: any) => typeof c === "number" ? c : 0);
+
+                sections.push({
+                  title: nodeName,
+                  heTitle: nodeHeName,
+                  refPrefix: `${title}, ${nodeName}`,
+                  chapters: chaptersArr,
+                  length: chaptersArr.length,
+                });
+              }
+            } else if (depth >= 3 && Array.isArray(mainShapeChapters)) {
+              for (let gateIdx = 0; gateIdx < mainShapeChapters.length; gateIdx++) {
+                const gateData = mainShapeChapters[gateIdx];
+                const gateNum = gateIdx + 1;
+                let chaptersArr: number[];
+
+                if (Array.isArray(gateData)) {
+                  chaptersArr = gateData.map((c: any) => typeof c === "number" ? c : 0);
+                } else if (typeof gateData === "number") {
+                  chaptersArr = [gateData];
+                } else {
+                  chaptersArr = [0];
+                }
+
+                const sectionLabel = (node.sectionNames && node.sectionNames[0]) || "Gate";
+
+                sections.push({
+                  title: `${sectionLabel} ${gateNum}`,
+                  heTitle: `${nodeHeName} ${gateNum}`,
+                  refPrefix: `${title}.${gateNum}`,
+                  chapters: chaptersArr,
+                  length: chaptersArr.length,
+                });
+              }
+            } else if (Array.isArray(mainShapeChapters)) {
+              const chaptersArr = mainShapeChapters.map((c: any) => typeof c === "number" ? c : 0);
+              sections.push({
+                title: title,
+                heTitle: nodeHeName,
+                refPrefix: title,
+                chapters: chaptersArr,
+                length: chaptersArr.length,
+              });
+            }
+          }
         }
 
         res.json({
