@@ -285,6 +285,11 @@ export function SefariaBrowser({ onSelectText, onSelectMultipleChapters, isTrans
   };
 
   const handleChapterDrillDown = (ch: number) => {
+    const verses = chaptersArray[ch - 1] || 0;
+    if (verses === 0) {
+      handleChapterToggle(ch);
+      return;
+    }
     setSelectedChapter(ch);
     setSelectedChapters(new Set());
     setFromVerse(null);
@@ -381,7 +386,7 @@ export function SefariaBrowser({ onSelectText, onSelectMultipleChapters, isTrans
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
-                {chapterCount} chapters — click to select, double-click to pick verses
+                {chapterCount} chapters — click to select{chaptersArray.some(v => v > 0) ? ", double-click to pick verses" : ""}
               </p>
               <div className="flex items-center gap-1">
                 <Button

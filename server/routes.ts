@@ -33,7 +33,8 @@ async function translateVerses(
   verses: { chapter: number; verse: number; hebrew: string }[],
   bookContext?: string
 ): Promise<TranslationVerse[]> {
-  const batchSize = 25;
+  const totalChars = verses.reduce((sum, v) => sum + v.hebrew.length, 0);
+  const batchSize = totalChars > 20000 ? 5 : totalChars > 8000 ? 10 : 20;
 
   const batches: { chapter: number; verse: number; hebrew: string }[][] = [];
   for (let i = 0; i < verses.length; i += batchSize) {
@@ -61,7 +62,6 @@ Rules:
           { role: "system", content: systemPrompt },
           { role: "user", content: versesText },
         ],
-        max_completion_tokens: 8192,
       });
 
       const content = response.choices[0]?.message?.content || "";
@@ -212,7 +212,9 @@ export async function registerRoutes(
             const refPrefix = ss.title;
             let chaptersArr: number[];
             if (typeof ss.chapters === "number") {
-              chaptersArr = [ss.chapters];
+              // Depth-1 text: N paragraphs addressed directly as Section.1 … Section.N
+              // Create N chapters (one per paragraph) with 0 drillable sub-verses.
+              chaptersArr = Array.from({ length: ss.chapters }, () => 0);
             } else if (Array.isArray(ss.chapters)) {
               chaptersArr = ss.chapters.map((c: any) => typeof c === "number" ? c : 0);
             } else {
