@@ -58,69 +58,68 @@ export function TranslationDisplay({ verses, title, sourceRef }: Props) {
     }
   };
 
-  const handleExportPDF = async () => {
-    const { jsPDF } = await import("jspdf");
-    const html2canvas = (await import("html2canvas")).default;
-
-    const container = document.createElement("div");
-    container.style.cssText = "position:absolute;left:-9999px;top:0;width:700px;background:#fff;padding:40px 50px;font-family:'Crimson Pro','Source Serif 4','Georgia',serif;color:#000;line-height:1.6;";
-
-    let html = `<div style="text-align:center;margin-bottom:8px;">
-      <h1 style="font-size:22px;font-weight:700;margin:0 0 4px 0;">${title}</h1>
-      ${sourceRef ? `<p style="font-size:13px;color:#666;margin:0;">${sourceRef}</p>` : ""}
-    </div>
-    <hr style="border:none;border-top:1px solid #ccc;margin:12px 0 20px 0;">`;
-
+  const handleExportPDF = () => {
     const chapterGroups = [...new Set(verses.map((v) => v.chapter))];
 
+    let bodyHtml = "";
     for (const ch of chapterGroups) {
       const chVerses = verses.filter((v) => v.chapter === ch);
-      html += `<h2 style="font-size:16px;font-weight:700;margin:24px 0 12px 0;padding-bottom:4px;border-bottom:1px solid #eee;">Chapter ${ch}</h2>`;
-
+      bodyHtml += `<h2>Chapter ${ch}</h2>`;
       for (const v of chVerses) {
         const cleanHebrew = stripHtmlTags(v.hebrew);
-        html += `<div style="margin-bottom:16px;">
-          <div style="font-size:11px;font-weight:600;color:#888;margin-bottom:4px;">${v.chapter}:${v.verse}</div>
-          <div dir="rtl" style="font-family:'Frank Ruhl Libre','David Libre','SBL Hebrew',serif;font-size:16px;line-height:1.8;margin-bottom:6px;text-align:right;">${cleanHebrew}</div>
-          <div style="font-family:'Crimson Pro','Source Serif 4','Georgia',serif;font-size:14px;line-height:1.7;color:#222;">${v.english}</div>
-        </div>`;
+        bodyHtml += `
+          <div class="verse-block">
+            <div class="verse-ref">${v.chapter}:${v.verse}</div>
+            <div class="hebrew" dir="rtl">${cleanHebrew}</div>
+            <div class="english">${v.english}</div>
+          </div>`;
       }
     }
 
-    container.innerHTML = html;
-    document.body.appendChild(container);
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
 
-    try {
-      const canvas = await html2canvas(container, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-      });
-
-      const imgData = canvas.toDataURL("image/jpeg", 0.95);
-      const imgWidth = 190;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      const pageHeight = 277;
-
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      let position = 10;
-      let remainingHeight = imgHeight;
-
-      doc.addImage(imgData, "JPEG", 10, position, imgWidth, imgHeight);
-      remainingHeight -= pageHeight;
-
-      while (remainingHeight > 0) {
-        doc.addPage();
-        position = position - pageHeight;
-        doc.addImage(imgData, "JPEG", 10, position, imgWidth, imgHeight);
-        remainingHeight -= pageHeight;
-      }
-
-      doc.save(`${title.replace(/\s+/g, "_")}_translation.pdf`);
-    } finally {
-      document.body.removeChild(container);
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;700&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Crimson Pro', Georgia, serif; color: #111; background: #fff; padding: 40px 50px; max-width: 720px; margin: 0 auto; line-height: 1.6; }
+    .title-block { text-align: center; margin-bottom: 8px; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .source-ref { font-size: 13px; color: #666; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 14px 0 22px 0; }
+    h2 { font-size: 15px; font-weight: 700; margin: 28px 0 14px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; page-break-after: avoid; }
+    .verse-block { margin-bottom: 18px; page-break-inside: avoid; }
+    .verse-ref { font-size: 10px; font-weight: 600; color: #999; letter-spacing: 0.05em; margin-bottom: 3px; }
+    .hebrew { font-family: 'Frank Ruhl Libre', 'David Libre', serif; font-size: 17px; line-height: 1.9; text-align: right; margin-bottom: 5px; }
+    .english { font-size: 14px; line-height: 1.75; color: #222; }
+    @media print {
+      body { padding: 20px 30px; }
+      h2 { page-break-after: avoid; }
+      .verse-block { page-break-inside: avoid; }
     }
+  </style>
+</head>
+<body>
+  <div class="title-block">
+    <h1>${title}</h1>
+    ${sourceRef ? `<div class="source-ref">${sourceRef}</div>` : ""}
+  </div>
+  <hr>
+  ${bodyHtml}
+  <script>
+    document.fonts.ready.then(function() {
+      window.print();
+    });
+  </script>
+</body>
+</html>`);
+    printWindow.document.close();
   };
 
   const currentChapters = [...new Set(verses.map((v) => v.chapter))];
