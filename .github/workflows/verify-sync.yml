@@ -12,20 +12,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Verify sync integrity
+      - name: Verify required project files
         run: |
           echo "=== Replit sync received ==="
           echo "Commit SHA : ${{ github.sha }}"
           echo "Author     : ${{ github.event.head_commit.author.name }}"
           echo "Message    : ${{ github.event.head_commit.message }}"
-          echo "Pushed by  : ${{ github.actor }}"
           echo ""
-          echo "Checking key project files are present..."
-          test -f package.json       && echo "  package.json        OK"
-          test -f server/routes.ts   && echo "  server/routes.ts    OK"
-          test -f shared/schema.ts   && echo "  shared/schema.ts    OK"
-          test -f scripts/post-merge.sh && echo "  post-merge script   OK"
+          MISSING=0
+          for f in package.json server/routes.ts shared/schema.ts scripts/post-merge.sh scripts/github-push.sh; do
+            if [ -f "$f" ]; then
+              echo "  $f  OK"
+            else
+              echo "  $f  MISSING" >&2
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -eq 1 ]; then
+            echo "ERROR: One or more required files are missing from the synced commit." >&2
+            exit 1
+          fi
           echo ""
-          echo "GitHub repo is in sync with Replit."
+          echo "All checks passed. GitHub is in sync with Replit."
