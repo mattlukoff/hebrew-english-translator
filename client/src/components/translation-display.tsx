@@ -1,11 +1,104 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, FileSpreadsheet, FileText, Columns2, AlignJustify } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Download, FileSpreadsheet, FileText, Columns2, AlignJustify, BookText, Loader2 } from "lucide-react";
 import type { VerseData, ViewMode } from "@/lib/types";
+
+interface WordDefinition {
+  transliteration: string;
+  root: string;
+  partOfSpeech: string;
+  gloss: string;
+}
+
+function WordPopover({ word, context }: { word: string; context: string }) {
+  const [open, setOpen] = useState(false);
+  const cleanWord = word.replace(/<[^>]*>/g, "").trim();
+
+  const { data: def, isLoading, isError } = useQuery<WordDefinition>({
+    queryKey: ["/api/word-definition", cleanWord, context.slice(0, 60)],
+    queryFn: async () => {
+      const res = await fetch("/api/word-definition", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ word: cleanWord, context }),
+      });
+      if (!res.ok) throw new Error("Definition lookup failed");
+      return res.json();
+    },
+    enabled: open,
+    staleTime: Infinity,
+    retry: 1,
+  });
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={`inline rounded px-0.5 transition-colors hover:bg-amber-100 dark:hover:bg-amber-900/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-400 ${
+            open ? "bg-amber-100 dark:bg-amber-900/40" : ""
+          }`}
+          dir="rtl"
+        >
+          {cleanWord}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="center" className="w-52 p-3" sideOffset={6}>
+        {isLoading && (
+          <div className="flex items-center gap-2 text-muted-foreground py-1">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span className="text-xs">Looking up…</span>
+          </div>
+        )}
+        {isError && <p className="text-xs text-destructive">Definition unavailable</p>}
+        {def && (
+          <div className="space-y-1.5">
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-xl font-hebrew leading-none" dir="rtl">{cleanWord}</span>
+              {def.partOfSpeech && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0">{def.partOfSpeech}</Badge>
+              )}
+            </div>
+            {def.transliteration && (
+              <p className="text-xs text-muted-foreground italic">{def.transliteration}</p>
+            )}
+            {def.root && (
+              <p className="text-xs text-muted-foreground">
+                Root: <span className="font-hebrew font-medium" dir="rtl">{def.root}</span>
+              </p>
+            )}
+            <div className="border-t pt-1.5">
+              <p className="text-sm font-medium">{def.gloss}</p>
+            </div>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function HebrewText({ text, context, enableDefs }: { text: string; context: string; enableDefs: boolean }) {
+  const stripped = text.replace(/<[^>]*>/g, "").trim();
+  if (!enableDefs) {
+    return <span dir="rtl" dangerouslySetInnerHTML={{ __html: text }} />;
+  }
+  const words = stripped.split(/\s+/).filter(Boolean);
+  return (
+    <span dir="rtl" className="leading-loose">
+      {words.map((word, i) => (
+        <span key={i}>
+          <WordPopover word={word} context={context} />
+          {i < words.length - 1 && " "}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 interface Props {
   verses: VerseData[];
@@ -19,6 +112,7 @@ function stripHtmlTags(html: string): string {
 
 export function TranslationDisplay({ verses, title, sourceRef }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("interlinear");
+  const [wordDefsEnabled, setWordDefsEnabled] = useState(false);
 
   const handleExportCSV = async () => {
     const headers = "Chapter,Verse,Hebrew,English\n";
@@ -146,6 +240,15 @@ export function TranslationDisplay({ verses, title, sourceRef }: Props) {
               </TabsTrigger>
             </TabsList>
           </Tabs>
+          <Button
+            variant={wordDefsEnabled ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setWordDefsEnabled(v => !v)}
+            title="Tap Hebrew words for root, transliteration & meaning"
+          >
+            <BookText className="w-3.5 h-3.5 mr-1.5" />
+            Definitions
+          </Button>
         </div>
       </div>
 
@@ -166,9 +269,9 @@ export function TranslationDisplay({ verses, title, sourceRef }: Props) {
 
       <ScrollArea className="h-[calc(100vh-280px)]">
         {viewMode === "interlinear" ? (
-          <InterlinearView verses={verses} chapters={currentChapters} />
+          <InterlinearView verses={verses} chapters={currentChapters} wordDefsEnabled={wordDefsEnabled} />
         ) : (
-          <SideBySideView verses={verses} chapters={currentChapters} />
+          <SideBySideView verses={verses} chapters={currentChapters} wordDefsEnabled={wordDefsEnabled} />
         )}
       </ScrollArea>
     </div>
@@ -178,9 +281,11 @@ export function TranslationDisplay({ verses, title, sourceRef }: Props) {
 function InterlinearView({
   verses,
   chapters,
+  wordDefsEnabled,
 }: {
   verses: VerseData[];
   chapters: number[];
+  wordDefsEnabled: boolean;
 }) {
   return (
     <div className="space-y-6">
@@ -208,11 +313,12 @@ function InterlinearView({
                     </div>
                     <div className="flex-1 space-y-2 min-w-0">
                       <p
-                        dir="rtl"
-                        className="font-hebrew text-lg leading-relaxed text-foreground"
-                        data-testid={`text-hebrew-${v.chapter}-${v.verse}`}
-                        dangerouslySetInnerHTML={{ __html: v.hebrew }}
-                      />
+                          dir="rtl"
+                          className="font-hebrew text-lg leading-relaxed text-foreground"
+                          data-testid={`text-hebrew-${v.chapter}-${v.verse}`}
+                        >
+                          <HebrewText text={v.hebrew} context={v.hebrew} enableDefs={wordDefsEnabled} />
+                        </p>
                       <p
                         className="font-serif text-base leading-relaxed text-muted-foreground"
                         data-testid={`text-english-${v.chapter}-${v.verse}`}
@@ -234,9 +340,11 @@ function InterlinearView({
 function SideBySideView({
   verses,
   chapters,
+  wordDefsEnabled,
 }: {
   verses: VerseData[];
   chapters: number[];
+  wordDefsEnabled: boolean;
 }) {
   return (
     <div className="space-y-6">
@@ -261,8 +369,9 @@ function SideBySideView({
                         </span>
                         <p
                           className="font-hebrew text-base leading-relaxed flex-1"
-                          dangerouslySetInnerHTML={{ __html: v.hebrew }}
-                        />
+                        >
+                          <HebrewText text={v.hebrew} context={v.hebrew} enableDefs={wordDefsEnabled} />
+                        </p>
                       </div>
                     ))}
                   </div>

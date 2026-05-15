@@ -1,12 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import type { TranslationVerse } from "@shared/schema";
 
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 function stripHtml(html: string): string {
@@ -56,15 +55,17 @@ Rules:
         .map((v) => `[${v.chapter}:${v.verse}] ${stripHtml(v.hebrew)}`)
         .join("\n");
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-5-mini",
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        system: systemPrompt,
         messages: [
-          { role: "system", content: systemPrompt },
           { role: "user", content: versesText },
         ],
       });
 
-      const content = response.choices[0]?.message?.content || "";
+      const block = message.content[0];
+      const content = block.type === "text" ? block.text : "";
       const lines = content.split("\n").filter((l) => l.trim());
 
       const parsed: TranslationVerse[] = [];
@@ -441,6 +442,30 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Custom translation error:", error);
       res.status(500).json({ error: error.message || "Translation failed" });
+    }
+  });
+
+  app.post("/api/word-definition", async (req, res) => {
+    try {
+      const { word, context = "" } = req.body;
+      if (!word?.trim()) return res.status(400).json({ error: "No word provided" });
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 256,
+        messages: [{
+          role: "user",
+          content: `Analyze this Hebrew word and return a JSON object with exactly these fields:\n{"transliteration":"romanized pronunciation","root":"3-letter shoresh or empty string if N/A","partOfSpeech":"grammatical role (noun/verb/prep/etc)","gloss":"brief meaning 1-5 words"}\n\nContext sentence: "${context}"\nTarget word: "${word}"\n\nReturn ONLY valid JSON, no markdown, no explanation.`
+        }]
+      });
+
+      const block = message.content[0];
+      if (block.type !== "text") throw new Error("Unexpected response");
+      const raw = block.text.trim().replace(/^```json?\s*/i, "").replace(/```\s*$/, "");
+      res.json(JSON.parse(raw));
+    } catch (error) {
+      console.error("Word definition error:", error);
+      res.status(500).json({ error: "Definition lookup failed" });
     }
   });
 
